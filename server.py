@@ -32,14 +32,16 @@ session_telemetry = {
     "start_time": time.time()
 }
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 CONFIGS = {
-    "climate_energy": "configs/climate_energy.yaml",
-    "tpch_benchmark": "configs/tpch_benchmark.yaml"
+    "climate_energy": os.path.join(ROOT_DIR, "configs", "climate_energy.yaml"),
+    "tpch_benchmark": os.path.join(ROOT_DIR, "configs", "tpch_benchmark.yaml")
 }
 
 def load_config(config_id="climate_energy"):
     path = CONFIGS.get(config_id, CONFIGS["climate_energy"])
-    with open(path, "r") as f:
+    with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -59,34 +61,41 @@ class DataMindAPIHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        if self.path == "/" or self.path == "/index.html":
-            self.serve_file("web/index.html", "text/html")
-        elif self.path.startswith("/api/config"):
-            self.handle_get_config()
-        elif self.path.startswith("/api/health"):
-            self.handle_get_health()
-        elif self.path.startswith("/api/telemetry"):
-            self.handle_get_telemetry()
-        elif self.path.startswith("/web/"):
-            rel_path = self.path.lstrip("/")
-            mime_type, _ = mimetypes.guess_type(rel_path)
-            self.serve_file(rel_path, mime_type or "application/octet-stream")
-        else:
-            super().do_GET()
+        try:
+            if self.path == "/" or self.path == "/index.html":
+                self.serve_file("web/index.html", "text/html")
+            elif self.path.startswith("/api/config"):
+                self.handle_get_config()
+            elif self.path.startswith("/api/health"):
+                self.handle_get_health()
+            elif self.path.startswith("/api/telemetry"):
+                self.handle_get_telemetry()
+            elif self.path.startswith("/web/"):
+                rel_path = self.path.lstrip("/")
+                mime_type, _ = mimetypes.guess_type(rel_path)
+                self.serve_file(rel_path, mime_type or "application/octet-stream")
+            else:
+                self.serve_file("web/index.html", "text/html")
+        except Exception as e:
+            self.send_json({"error": str(e)}, 500)
 
     def do_POST(self):
-        if self.path == "/api/query":
-            self.handle_post_query()
-        elif self.path == "/api/mutate":
-            self.handle_post_mutate()
-        else:
-            self.send_error(404, "Endpoint not found")
+        try:
+            if self.path == "/api/query":
+                self.handle_post_query()
+            elif self.path == "/api/mutate":
+                self.handle_post_mutate()
+            else:
+                self.send_error(404, "Endpoint not found")
+        except Exception as e:
+            self.send_json({"status": "EXECUTION_ERROR", "error": str(e)}, 500)
 
     def serve_file(self, filepath, content_type):
-        if not os.path.exists(filepath):
+        full_path = os.path.join(ROOT_DIR, filepath) if not os.path.isabs(filepath) else filepath
+        if not os.path.exists(full_path):
             self.send_error(404, f"File not found: {filepath}")
             return
-        with open(filepath, "rb") as f:
+        with open(full_path, "rb") as f:
             data = f.read()
         self.send_response(200)
         self.send_header("Content-Type", content_type)
