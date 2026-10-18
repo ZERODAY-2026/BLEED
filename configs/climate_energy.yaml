@@ -1,0 +1,19 @@
+dataset_id: "climate_energy"
+display_name: "Global Climate & Renewable Energy (OWID / Custom Mutable)"
+database: "DATAMIND_DB"
+schema: "CLIMATE_ENERGY"
+allowed_tables:
+  - "ENERGY_METRICS"
+  - "POLICY_TARGETS"
+domain_hints: >
+  COUNTRY_CODE joins ENERGY_METRICS and POLICY_TARGETS.
+  ENERGY_METRICS contains COUNTRY_CODE, COUNTRY_NAME, REPORT_YEAR, RENEWABLE_SHARE_PCT, CO2_EMISSIONS_MT, GRID_RELIABILITY_SCORE.
+  POLICY_TARGETS contains COUNTRY_CODE, REGION, NET_ZERO_TARGET_YEAR, ANNUAL_GREEN_INVESTMENT_USD_B.
+  Note that RENEWABLE_SHARE_PCT may be NULL for certain years (e.g. 2025 projection); always check for NULLs.
+license_attribution: "Derived from Our World in Data (CC BY 4.0) for live mutation and missing data testing."
+sample_questions:
+  - "Which country had the highest renewable share percentage in 2024?"
+  - "Compare average CO2 emissions and total annual green investment by region for 2024."
+  - "What is India's net zero target year and how much does it invest annually in green projects?"
+  - "Show me renewable share data for 2025 and flag any missing values."
+  - "Which country has the highest grid reliability score in 2024?"

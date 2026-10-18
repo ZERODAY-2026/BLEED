@@ -1,0 +1,17 @@
+# Python virtual environment & bytecode
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Environment variables & secrets (CRITICAL FOR GATE G5)
+.env
+.env.local
+*.pem
+*.key
+*.token
+
+# Testing & Streamlit cache
+.pytest_cache/
+.streamlit/secrets.toml
+.DS_Store

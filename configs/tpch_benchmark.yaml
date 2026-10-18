@@ -1,0 +1,24 @@
+dataset_id: "tpch_benchmark"
+display_name: "TPC-H Supply Chain & Orders Benchmark (Snowflake Sample Data)"
+database: "SNOWFLAKE_SAMPLE_DATA"
+schema: "TPCH_SF1"
+allowed_tables:
+  - "CUSTOMER"
+  - "ORDERS"
+  - "LINEITEM"
+  - "NATION"
+  - "REGION"
+domain_hints: >
+  CUSTOMER.C_CUSTKEY = ORDERS.O_CUSTKEY.
+  ORDERS.O_ORDERKEY = LINEITEM.L_ORDERKEY.
+  CUSTOMER.C_NATIONKEY = NATION.N_NATIONKEY.
+  NATION.N_REGIONKEY = REGION.R_REGIONKEY.
+  Revenue is calculated as SUM(L_EXTENDEDPRICE * (1 - L_DISCOUNT)).
+  Orders have O_ORDERSTATUS ('F' = fulfilled, 'O' = open, 'P' = pending).
+  Always LIMIT queries to 50 rows unless aggregating.
+license_attribution: "Snowflake Sample Data (TPC-H SF1 benchmark). Referenced directly inside Snowflake."
+sample_questions:
+  - "Who are the top 5 customers by total order spend?"
+  - "What is the total revenue per nation in the ASIA region?"
+  - "What are the most recent 10 orders with order status 'F'?"
+  - "How many orders were placed per order priority?"
