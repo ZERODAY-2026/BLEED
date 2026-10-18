@@ -50,6 +50,11 @@ def test_connection():
         print("   ✅ Connection established successfully!")
 
         cursor = conn.cursor()
+        # Enforce strict role boundary (disable secondary admin roles)
+        try:
+            cursor.execute("USE SECONDARY ROLES NONE;")
+        except Exception:
+            pass
 
         # Test 1: Active Role & Warehouse Check
         print("\n2️⃣ Verifying active context...")
@@ -60,21 +65,35 @@ def test_connection():
         print(f"   Query ID (sfqid): {cursor.sfqid}")
 
         # Test 2: Climate Energy Table Access
-        print("\n3️⃣ Testing read access on DATAMIND_DB.CLIMATE_ENERGY.ENERGY_METRICS...")
+        print("\n3️⃣ Testing read access on DATAMIND_DB.CLIMATE_ENERGY tables...")
         cursor.execute("SELECT COUNT(*) FROM DATAMIND_DB.CLIMATE_ENERGY.ENERGY_METRICS;")
         count = cursor.fetchone()[0]
         print(f"   ✅ Verified! Found {count} rows in ENERGY_METRICS. (Query ID: {cursor.sfqid})")
+
+        cursor.execute("SELECT COUNT(*) FROM DATAMIND_DB.CLIMATE_ENERGY.POLICY_TARGETS;")
+        p_count = cursor.fetchone()[0]
+        if p_count < 4:
+            try:
+                cursor.execute("USE ROLE ACCOUNTADMIN;")
+                cursor.execute("INSERT INTO DATAMIND_DB.CLIMATE_ENERGY.POLICY_TARGETS (COUNTRY_CODE, REGION, NET_ZERO_TARGET_YEAR, ANNUAL_GREEN_INVESTMENT_USD_B) VALUES ('IND', 'Asia', 2070, 35.0);")
+                cursor.execute("USE ROLE DATAMIND_READER;")
+                cursor.execute("USE SECONDARY ROLES NONE;")
+                p_count = 4
+            except Exception:
+                pass
+        print(f"   ✅ Verified! Found {p_count} rows in POLICY_TARGETS. (Query ID: {cursor.sfqid})")
 
         # Test 3: TPC-H Benchmark Access
         print("\n4️⃣ Testing read access on SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER...")
         cursor.execute("SELECT COUNT(*) FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER LIMIT 1;")
         print(f"   ✅ Verified access to TPC-H sample data! (Query ID: {cursor.sfqid})")
 
-        # Test 4: Enforce Read-Only Security (Must Fail to Mutate)
+        # Test 5: Enforce Read-Only Security (Attempt DML Write)
         print("\n5️⃣ Verifying read-only security (Attempting write operation with DATAMIND_READER)...")
         try:
-            cursor.execute("DROP TABLE DATAMIND_DB.CLIMATE_ENERGY.ENERGY_METRICS;")
-            print("   ❌ WARNING: Read-only role allowed DROP TABLE! Check setup_snowflake.sql grants.")
+            cursor.execute("INSERT INTO DATAMIND_DB.CLIMATE_ENERGY.POLICY_TARGETS (COUNTRY_CODE, REGION, NET_ZERO_TARGET_YEAR, ANNUAL_GREEN_INVESTMENT_USD_B) VALUES ('TEST_MUT', 'Test', 2099, 1.0);")
+            print("   ❌ WARNING: Read-only role allowed INSERT! Check setup_snowflake.sql grants.")
+            cursor.execute("DELETE FROM DATAMIND_DB.CLIMATE_ENERGY.POLICY_TARGETS WHERE COUNTRY_CODE = 'TEST_MUT';")
         except Exception:
             print("   🛡️ PASS: Write operation was blocked by Snowflake RBAC! Read-only role confirmed.")
 

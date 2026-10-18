@@ -65,10 +65,25 @@ This script creates:
 - Seeds verified climate indicators derived from Our World in Data (CC BY 4.0)
 
 ### 4. Launch the Evidence UI
+
+**Option A: Executive Dark-Mode Studio (Recommended)**
+```bash
+python3 server.py
+```
+Open your browser at `http://localhost:8000`.
+
+**Option B: Streamlit Companion Studio**
 ```bash
 streamlit run app.py
 ```
 Open your browser at `http://localhost:8501`.
+
+### 5. Deploy to Vercel (Cloud Serverless)
+DataMind is configured with native Vercel serverless support (`vercel.json` + `api/index.py` + root `index.html`):
+1. Push your repository to GitHub (`git push origin main`).
+2. Go to [vercel.com](https://vercel.com) -> **Add New Project** -> **Import Git Repository**.
+3. Under **Environment Variables**, optionally add your Snowflake credentials and Google AI Studio API key (`GEMINI_API_KEY`).
+4. Click **Deploy**. Vercel will host the WebGL 3D interface and serverless query API instantly.
 
 ---
 

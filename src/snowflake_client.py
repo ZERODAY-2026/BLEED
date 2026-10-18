@@ -114,6 +114,8 @@ class SnowflakeEngine:
             import sqlite3
             elapsed_ms = round((time.time() - start_time) * 1000 + 38.5, 2)
             mock_qid = f"01b{uuid.uuid4().hex[:8]}-0001-trace-record"
+            credits = round((elapsed_ms / 1000.0) * (1.0 / 3600.0), 8)
+            usd_cost = round(credits * 3.00, 6)
             try:
                 con = sqlite3.connect(":memory:")
                 for tbl_name, df in MOCK_CLIMATE_ENERGY.items():
@@ -132,6 +134,8 @@ class SnowflakeEngine:
                     "success": True,
                     "query_id": mock_qid,
                     "elapsed_ms": elapsed_ms,
+                    "credits_consumed": credits,
+                    "est_usd_cost": usd_cost,
                     "row_count": len(res_df),
                     "dataframe": res_df,
                     "error": None,
@@ -142,6 +146,8 @@ class SnowflakeEngine:
                     "success": False,
                     "query_id": mock_qid,
                     "elapsed_ms": elapsed_ms,
+                    "credits_consumed": credits,
+                    "est_usd_cost": usd_cost,
                     "row_count": 0,
                     "dataframe": pd.DataFrame(),
                     "error": str(e),
@@ -150,6 +156,10 @@ class SnowflakeEngine:
 
         cursor = self.conn.cursor()
         try:
+            try:
+                cursor.execute("USE SECONDARY ROLES NONE")
+            except Exception:
+                pass
             cursor.execute(f"USE DATABASE {database}")
             cursor.execute(f"USE SCHEMA {schema}")
             cursor.execute(sql)
@@ -157,25 +167,111 @@ class SnowflakeEngine:
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
             df = pd.DataFrame(rows, columns=columns)
             elapsed_ms = round((time.time() - start_time) * 1000, 2)
+            credits = round((elapsed_ms / 1000.0) * (1.0 / 3600.0), 8)
+            usd_cost = round(credits * 3.00, 6)
 
             return {
                 "success": True,
                 "query_id": cursor.sfqid,
                 "elapsed_ms": elapsed_ms,
+                "credits_consumed": credits,
+                "est_usd_cost": usd_cost,
                 "row_count": len(df),
                 "dataframe": df,
                 "error": None,
                 "mode": "snowflake_live"
             }
         except Exception as e:
+            elapsed_ms = round((time.time() - start_time) * 1000, 2)
+            credits = round((elapsed_ms / 1000.0) * (1.0 / 3600.0), 8)
+            usd_cost = round(credits * 3.00, 6)
             return {
                 "success": False,
                 "query_id": getattr(cursor, "sfqid", None),
-                "elapsed_ms": round((time.time() - start_time) * 1000, 2),
+                "elapsed_ms": elapsed_ms,
+                "credits_consumed": credits,
+                "est_usd_cost": usd_cost,
                 "row_count": 0,
                 "dataframe": pd.DataFrame(),
                 "error": str(e),
                 "mode": "snowflake_live"
+            }
+        finally:
+            cursor.close()
+
+    def profile_data_health(self, database: str, schema: str, table: str) -> Dict[str, Any]:
+        """
+        Automated Data Quality & Health Profiler (Criteria 1 & 4).
+        Introspects total row count, column completeness %, null counts, and data health scores.
+        """
+        table_upper = table.upper()
+        if self.mock_mode or not self.conn:
+            df = MOCK_CLIMATE_ENERGY.get(table_upper, pd.DataFrame())
+            if df.empty:
+                return {"table": table_upper, "total_rows": 0, "completeness_score": 100.0, "total_nulls": 0, "columns": {}}
+
+            total_rows = len(df)
+            cols_profile = {}
+            total_cells = total_rows * len(df.columns)
+            total_nulls = 0
+
+            for col in df.columns:
+                null_count = int(df[col].isna().sum())
+                total_nulls += null_count
+                cols_profile[col] = {
+                    "dtype": str(df[col].dtype),
+                    "null_count": null_count,
+                    "completeness_pct": round(((total_rows - null_count) / total_rows) * 100, 1),
+                    "distinct_values": int(df[col].nunique())
+                }
+
+            completeness_score = round(((total_cells - total_nulls) / total_cells) * 100, 1) if total_cells > 0 else 100.0
+            return {
+                "table": f"{database}.{schema}.{table_upper}",
+                "total_rows": total_rows,
+                "completeness_score": completeness_score,
+                "total_nulls": total_nulls,
+                "columns": cols_profile
+            }
+
+        cursor = self.conn.cursor()
+        try:
+            fqn = f"{database}.{schema}.{table_upper}"
+            cursor.execute(f"SELECT COUNT(*) FROM {fqn}")
+            total_rows = cursor.fetchone()[0]
+
+            cursor.execute(f"DESCRIBE TABLE {fqn}")
+            cols_meta = cursor.fetchall()
+            col_names = [r[0] for r in cols_meta]
+
+            agg_exprs = [f"COUNT(CASE WHEN {col} IS NULL THEN 1 END) AS {col}_NULLS, COUNT(DISTINCT {col}) AS {col}_DISTINCT" for col in col_names]
+            cursor.execute(f"SELECT {', '.join(agg_exprs)} FROM {fqn}")
+            stats = cursor.fetchone()
+
+            cols_profile = {}
+            total_nulls = 0
+            idx = 0
+            for i, col in enumerate(col_names):
+                null_c = stats[idx] if stats else 0
+                dist_c = stats[idx + 1] if stats else 0
+                idx += 2
+                total_nulls += null_c
+                comp = round(((total_rows - null_c) / total_rows) * 100, 1) if total_rows > 0 else 100.0
+                cols_profile[col] = {
+                    "dtype": cols_meta[i][1],
+                    "null_count": null_c,
+                    "completeness_pct": comp,
+                    "distinct_values": dist_c
+                }
+
+            total_cells = total_rows * len(col_names)
+            completeness_score = round(((total_cells - total_nulls) / total_cells) * 100, 1) if total_cells > 0 else 100.0
+            return {
+                "table": fqn,
+                "total_rows": total_rows,
+                "completeness_score": completeness_score,
+                "total_nulls": total_nulls,
+                "columns": cols_profile
             }
         finally:
             cursor.close()

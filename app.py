@@ -5,6 +5,9 @@ Cinematic Awwwards-Tier Dark Mode • Levitating Matte-Black Glass Artifact & HU
 """
 
 import os
+import json
+import datetime
+import hashlib
 import yaml
 import streamlit as st
 import streamlit.components.v1 as components
@@ -343,6 +346,36 @@ with st.sidebar:
     with st.expander("🔍 Schema Introspection Inspector"):
         st.code(schema_context, language="text")
 
+    # Session Telemetry State
+    if "total_queries" not in st.session_state:
+        st.session_state.total_queries = 0
+    if "total_credits" not in st.session_state:
+        st.session_state.total_credits = 0.0
+    if "total_usd" not in st.session_state:
+        st.session_state.total_usd = 0.0
+
+    st.markdown("---")
+    st.markdown("#### ⚡ **Snowflake Cost & Credit Telemetry**")
+    tc1, tc2 = st.columns(2)
+    tc1.metric("Queries Run", st.session_state.total_queries)
+    tc2.metric("Credits Used", f"{st.session_state.total_credits:.6f}")
+    st.caption(f"Est. Warehouse Cost: **${st.session_state.total_usd:.5f} USD** (Rate: $3.00/credit)")
+
+    st.markdown("---")
+    with st.expander("🏥 **Data Quality & Health Profiler**", expanded=False):
+        st.caption("Automated schema health & completeness auditing:")
+        for tbl in active_config.get("allowed_tables", []):
+            health = sf_engine.profile_data_health(active_config["database"], active_config["schema"], tbl)
+            st.markdown(f"**Table:** `{tbl}`")
+            h1, h2 = st.columns(2)
+            h1.metric("Total Rows", health["total_rows"])
+            h2.metric("Completeness", f"{health['completeness_score']}%")
+            if health.get("total_nulls", 0) > 0:
+                st.caption(f"⚠️ {health['total_nulls']} NULL/missing values detected")
+            else:
+                st.caption("✅ Zero missing values (100% complete)")
+            st.divider()
+
     # Live Data Mutation Proof (Extra PS1 Rubric Feature)
     if active_config.get("dataset_id") == "climate_energy":
         st.markdown("---")
@@ -374,24 +407,13 @@ with st.sidebar:
 # ------------------------------------------------------------------------------
 st.markdown("""
 <div class="artifact-stage">
-    <div class="dust-particle dust-1"></div>
-    <div class="dust-particle dust-2"></div>
-    <div class="dust-particle dust-3"></div>
-    <div class="kinetic-watermark">DATAMIND</div>
     <div class="pill-reticle">
         <span class="pulse-dot"></span>
-        ZeroDay OSS Hacktoberfest 2026 • Problem Statement 1
+        Snowflake + Google Gemma
     </div>
-    <div class="artifact-title">DataMind Studio</div>
+    <div class="artifact-title">Talk to your warehouse.</div>
     <div class="artifact-subtitle">
-        An ultra-premium, grounded Natural Language to Snowflake data agent powered by <strong>Google Gemma</strong>. 
-        Stochastic reasoning is deterministically verified with AST guardrails and audited against live data.
-    </div>
-    <div class="reticle-grid">
-        <div class="reticle-tag">[+ <span>AST READ-ONLY GATE:</span> ENFORCED]</div>
-        <div class="reticle-tag">[+ <span>TRACEABILITY:</span> SFQID CAPTURED]</div>
-        <div class="reticle-tag">[+ <span>ADAPTABILITY:</span> ZERO-REWRITE]</div>
-        <div class="reticle-tag">[+ <span>INFERENCE:</span> GOOGLE GEMMA]</div>
+        Ask questions in plain English. Queries are verified against deterministic AST guardrails and audited against live Snowflake rows.
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -561,12 +583,13 @@ if user_input:
                 st.caption("A chart visualizer is available when 2 or more rows are returned.")
 
         with tab_evidence:
-            st.markdown("##### 🏛️ Verifiable Query Audit Trail")
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Snowflake Query ID (sfqid)", exec_res["query_id"])
+            st.markdown("##### 🏛️ Verifiable Query Audit Trail & Snowflake Telemetry")
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Query ID (sfqid)", exec_res["query_id"])
             col2.metric("Result Rows", exec_res["row_count"])
-            col3.metric("Execution Latency", f"{exec_res['elapsed_ms']} ms")
-            col4.metric("Security Gate", "AST Verified Read-Only")
+            col3.metric("Latency", f"{exec_res['elapsed_ms']} ms")
+            col4.metric("Credits Consumed", f"{exec_res.get('credits_consumed', 0.0):.6f}")
+            col5.metric("Est. Cost", f"${exec_res.get('est_usd_cost', 0.0):.5f}")
 
             st.markdown("**Executed Read-Only Snowflake SQL:**")
             st.code(validated_sql, language="sql")
@@ -574,11 +597,66 @@ if user_input:
             st.markdown("**Exact Snowflake Result Rows:**")
             st.dataframe(df, use_container_width=True)
 
+            st.markdown("##### 📥 **One-Click Audit & Evidence Export**")
+            exp_col1, exp_col2 = st.columns(2)
+            
+            # 1. Verifiable CSV with provenance header
+            csv_meta = (
+                f"# DataMind ZeroDay OSS Hacktoberfest 2026 Audit Export\n"
+                f"# Snowflake Query ID (sfqid): {exec_res['query_id']}\n"
+                f"# Executed SQL: {validated_sql}\n"
+                f"# Execution Latency: {exec_res['elapsed_ms']} ms\n"
+                f"# Warehouse Credits Consumed: {exec_res.get('credits_consumed', 0.0):.8f}\n"
+                f"# Export Timestamp UTC: {datetime.datetime.utcnow().isoformat()}Z\n"
+            )
+            csv_data = csv_meta + df.to_csv(index=False)
+            exp_col1.download_button(
+                "📥 Export Verifiable CSV",
+                data=csv_data,
+                file_name=f"evidence_{exec_res['query_id']}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+            
+            # 2. Cryptographic JSON Audit Packet
+            data_bytes = df.to_json(orient='records').encode('utf-8')
+            sha256_hash = hashlib.sha256(data_bytes).hexdigest()
+            audit_packet = {
+                "audit_version": "1.0",
+                "timestamp_utc": datetime.datetime.utcnow().isoformat() + "Z",
+                "question": user_input,
+                "snowflake_query_id": exec_res["query_id"],
+                "execution_mode": exec_res.get("mode", "unknown"),
+                "executed_sql": validated_sql,
+                "ast_gate_passed": True,
+                "latency_ms": exec_res["elapsed_ms"],
+                "warehouse_credits_consumed": exec_res.get("credits_consumed", 0.0),
+                "estimated_usd_cost": exec_res.get("est_usd_cost", 0.0),
+                "row_count": exec_res["row_count"],
+                "evidence_sha256": sha256_hash,
+                "grounded_answer": synthesis["grounded_answer"],
+                "result_records": df.to_dict(orient="records")
+            }
+            exp_col2.download_button(
+                "🛡️ Export JSON Audit Packet",
+                data=json.dumps(audit_packet, indent=2),
+                file_name=f"audit_packet_{exec_res['query_id']}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+
+        # Update session telemetry counters
+        st.session_state.total_queries += 1
+        st.session_state.total_credits += exec_res.get("credits_consumed", 0.0)
+        st.session_state.total_usd += exec_res.get("est_usd_cost", 0.0)
+
         # Append to session history
         evidence_packet = {
             "query_id": exec_res["query_id"],
             "row_count": exec_res["row_count"],
             "elapsed_ms": exec_res["elapsed_ms"],
+            "credits_consumed": exec_res.get("credits_consumed", 0.0),
+            "est_usd_cost": exec_res.get("est_usd_cost", 0.0),
             "sql": validated_sql,
             "dataframe": df
         }
